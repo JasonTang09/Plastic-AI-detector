@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plastic Detector AI</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+  <script src="teachablemachine-image.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
+    canvas { margin-top: 20px; border: 2px solid #333; border-radius: 8px; max-width: 100%; }
+    .prediction { margin-top: 10px; font-size: 18px; font-weight: bold; }
+    input, textarea, button { margin-top: 10px; padding: 10px; font-size: 16px; }
+    textarea { width: 90%; max-width: 300px; height: 60px; }
+    #controls { display: flex; flex-direction: column; align-items: center; }
+    #controls button { margin: 5px; width: 200px; }
+    #data-reports { margin-top: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
+    #data-reports h2 { text-align: center; }
+    .report { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 5px; background: #f9f9f9; }
+    #points-system { margin-top: 20px; font-size: 18px; font-weight: bold; }
+    #education { margin-top: 30px; background: #eaf7ff; padding: 15px; border-radius: 8px; max-width: 500px; margin-left: auto; margin-right: auto; text-align: left; }
+    footer { margin-top: 20px; font-size: 14px; color: gray; }
+  </style>
+</head>
+<body>
+  <h1>Plastic Detector AI</h1>
+
+  <div id="controls">
+    <button id="startBtn">Start Webcam</button>
+    <button id="switchBtn">Switch Camera</button>
+    <input type="text" id="location" placeholder="Nama / Location">
+    <textarea id="notes" placeholder="Catatan tambahan"></textarea>
+    <button id="captureBtn">Capture Image</button>
+  </div>
+
+  <div id="webcam-container"></div>
+  <div id="label-container"></div>
+
+  <!-- Points System -->
+  <div id="points-system">
+    Your Points: <span id="points">0</span>
+  </div>
+
+  <div id="data-reports">
+    <h2>Data Reports</h2>
+    <!-- Reports will appear here -->
+  </div>
+
+  <!-- Education Section -->
+  <div id="education">
+    <h2>Why Reducing Water Pollution Matters</h2>
+    <p>Every year, millions of tons of plastic end up in our oceans, harming marine life and entering the food chain. By reducing plastic pollution, we protect fish, preserve ecosystems, and ensure cleaner water for communities. Small actions—like reporting and collecting waste—can create a huge impact.</p>
+  </div>
+
+  <script>
+    let model, webcam, labelContainer, maxPredictions;
+    let currentFacingMode = "user"; // front camera default
+    let points = 0;
+
+    async function init() {
+      const modelURL = "model.json";
+      const metadataURL = "metadata.json";
+
+      // Load model
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+
+      await startWebcam();
+    }
+
+    async function startWebcam() {
+      if (webcam) webcam.stop();
+
+      webcam = new tmImage.Webcam(400, 300, true);
+      await webcam.setup({ facingMode: currentFacingMode });
+      await webcam.play();
+
+      const container = document.getElementById("webcam-container");
+      container.innerHTML = "";
+      container.appendChild(webcam.canvas);
+
+      labelContainer = document.getElementById("label-container");
+      labelContainer.innerHTML = "";
+      for (let i = 0; i < maxPredictions; i++) {
+        const div = document.createElement("div");
+        div.classList.add("prediction");
+        labelContainer.appendChild(div);
+      }
+
+      window.requestAnimationFrame(loop);
+    }
+
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+      for (let i = 0; i < maxPredictions; i++) {
+        const classPrediction =
+          prediction[i].className + ": " + (prediction[i].probability * 100).toFixed(2) + "%";
+        labelContainer.childNodes[i].innerHTML = classPrediction;
+      }
+    }
+
+    // Capture image + save report
+    const captureBtn = document.getElementById("captureBtn");
+    captureBtn.addEventListener("click", async () => {
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = webcam.canvas.width;
+      tempCanvas.height = webcam.canvas.height;
+      const ctx = tempCanvas.getContext("2d");
+
+      // Draw webcam frame
+      ctx.drawImage(webcam.canvas, 0, 0, tempCanvas.width, tempCanvas.height);
+
+      // Predictions
+      const prediction = await model.predict(webcam.canvas);
+      ctx.fillStyle = "red";
+      ctx.font = "20px Arial";
+      let y = 25;
+      let predictionText = "";
+      for (let i = 0; i < maxPredictions; i++) {
+        const text = `${prediction[i].className}: ${(prediction[i].probability*100).toFixed(2)}%`;
+        ctx.fillText(text, 10, y);
+        predictionText += text + "\n";
+        y += 25;
+      }
+
+      // Location & notes
+      const location = document.getElementById("location").value;
+      const notes = document.getElementById("notes").value;
+      ctx.fillStyle = "blue";
+      ctx.fillText(`Location: ${location}`, 10, y);
+      y += 25;
+      ctx.fillText(`Notes: ${notes}`, 10, y);
+
+      // Save image
+      const imageURL = tempCanvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = imageURL;
+      link.download = "scanned_image.png";
+      link.click();
+
+      // Save report in Data Reports section
+      const reportsContainer = document.getElementById("data-reports");
+      const reportDiv = document.createElement("div");
+      reportDiv.classList.add("report");
+      reportDiv.innerHTML = `
+        <strong>Location:</strong> ${location} <br>
+        <strong>Notes:</strong> ${notes} <br>
+        <pre>${predictionText}</pre>
+      `;
+      reportsContainer.appendChild(reportDiv);
+
+      // Add points (gamification)
+      points += 10; // +10 points per capture
+      document.getElementById("points").textContent = points;
+    });
+
+    // Switch camera
+    const switchBtn = document.getElementById("switchBtn");
+    switchBtn.addEventListener("click", async () => {
+      currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+      await startWebcam();
+    });
+
+    // Start webcam
+    const startBtn = document.getElementById("startBtn");
+    startBtn.addEventListener("click", init);
+  </script>
+
+  <footer>
+    Made by NeuroSpark_Jason
+  </footer>
+</body>
+</html>
